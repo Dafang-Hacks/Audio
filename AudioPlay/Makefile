@@ -36,4 +36,4 @@ clean:
 	rm -f *.o *~
 
 distclean: clean
-	rm -f $(audioplay)
+	rm -f $(SAMPLES)
