@@ -21,6 +21,8 @@
 
 #define IMP_AUDIO_BUF_SIZE (5 * (AEC_SAMPLE_RATE * sizeof(short) * AEC_SAMPLE_TIME / 1000))
 
+#define IMP_LOG IMP_LOG_PRINT
+
 int chnVol = 50;
 
 
@@ -116,31 +118,36 @@ static void *IMP_Audio_Play_ALGO_AO_Thread(void *argv)
 
 	while(1) {
 		size = fread(buf, 1, IMP_AUDIO_BUF_SIZE, play_file);
-		if(size < IMP_AUDIO_BUF_SIZE)
-			break;
-
 		/* Step 5: send frame data. */
-		IMPAudioFrame frm;
-		frm.virAddr = (uint32_t *)buf;
-		frm.len = size;
-		ret = IMP_AO_SendFrame(devID, chnID, &frm, BLOCK);
-		if(ret != 0) {
-			IMP_LOG_ERR(TAG, "send Frame Data error\n");
-			return NULL;
-		}
+		if (size > 0) {
+			IMPAudioFrame frm;
+			frm.virAddr = (uint32_t *)buf;
+			frm.len = size;
+			ret = IMP_AO_SendFrame(devID, chnID, &frm, BLOCK);
+			if (ret != 0) {
+				IMP_LOG_ERR(TAG, "send Frame Data error\n");
+				return NULL;
+			}
+		} else {
+			IMPAudioOChnState play_status;
+			ret = IMP_AO_QueryChnStat(devID, chnID, &play_status);
+			if (ret != 0) {
+				IMP_LOG_ERR(TAG, "IMP_AO_QueryChnStat error\n");
+				return NULL;
+			}
+			//IMP_LOG_INFO(TAG, "Play: TotalNum %d, FreeNum %d, BusyNum %d\n",
+			//             play_status.chnTotalNum, play_status.chnFreeNum, play_status.chnBusyNum);
 
-		IMPAudioOChnState play_status;
-		ret = IMP_AO_QueryChnStat(devID, chnID, &play_status);
-		if(ret != 0) {
-			IMP_LOG_ERR(TAG, "IMP_AO_QueryChnStat error\n");
-			return NULL;
-		}
+			// No need to consume CPU, but we can't continue the program
+			// or else the audio channel is disabled.
+			// There are buffers filled that are still playing.
+			sleep(1);
 
-/*		IMP_LOG_INFO(TAG, "Play: TotalNum %d, FreeNum %d, BusyNum %d\n",
-				play_status.chnTotalNum, play_status.chnFreeNum, play_status.chnBusyNum);
-*/
+			// Every frame has been played
+			if (play_status.chnBusyNum == 0)
+				break;
+		}
 	}
-
 
 	/* Step 6: disable the audio channel. */
 	ret = IMP_AO_DisableChn(devID, chnID);
